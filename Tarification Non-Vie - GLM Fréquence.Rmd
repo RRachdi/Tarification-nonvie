@@ -1,0 +1,64 @@
+---
+title: "Tarification Non-Vie - Modèle GLM Fréquence"
+author: "Rachid Rachdi"
+output: html_document
+---
+
+## 1. Présentation du projet
+
+Ce projet modélise la fréquence de sinistres sur un portefeuille auto français 
+à l'aide d'un GLM Poisson avec offset d'exposition.
+
+Les données proviennent du package `CASdatasets` (freMTPL2freq).
+
+## 2. Chargement des données
+
+```{r setup, message=FALSE, warning=FALSE}
+library(CASdatasets)
+library(ggplot2)
+
+data(freMTPL2freq)
+freMTPL2freq$ClaimNb <- as.numeric(freMTPL2freq$ClaimNb)
+freq <- freMTPL2freq[freMTPL2freq$VehAge <= 30 & freMTPL2freq$DrivAge <= 90, ]
+```
+
+Le dataset contient **`r nrow(freq)` contrats** après nettoyage.
+
+## 3. Statistiques descriptives
+
+```{r summary}
+summary(freq[, c("ClaimNb", "Exposure", "BonusMalus", "DrivAge", "VehAge")])
+```
+
+Fréquence brute du portefeuille :
+
+```{r frequence}
+round(sum(freq$ClaimNb) / sum(freq$Exposure), 4)
+```
+
+## 4. Modélisation GLM Poisson
+
+```{r modele}
+modele1 <- glm(ClaimNb ~ VehPower + VehAge + DrivAge + BonusMalus + VehGas + Area,
+               offset = log(Exposure),
+               family = poisson(link = "log"),
+               data = freq)
+
+summary(modele1)$coefficients
+```
+
+## 5. Prédictions
+
+```{r predictions}
+freq$prediction <- predict(modele1, type = "response")
+freq_filtre <- freq[freq$Exposure >= 0.5, ]
+freq_filtre$freq_obs <- freq_filtre$ClaimNb / freq_filtre$Exposure
+freq_filtre$freq_pred <- freq_filtre$prediction / freq_filtre$Exposure
+
+plot(freq_filtre$freq_pred, freq_filtre$freq_obs,
+     xlab = "Fréquence prédite",
+     ylab = "Fréquence observée",
+     main = "Prédictions vs Observations (Exposure >= 0.5)",
+     pch = 16, col = rgb(0, 0, 1, 0.2))
+abline(0, 1, col = "red")
+```
