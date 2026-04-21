@@ -1,124 +1,20 @@
----
-title: "Tarification Non-Vie - Modèle GLM Fréquence"
-author: "Rachid Rachdi"
-output: html_document
----
+# Tarification Non-Vie — GLM Fréquence & Sévérité
 
-## 1. Présentation du projet
+Modélisation actuarielle de la fréquence et sévérité de sinistres auto 
+sur un portefeuille de 678 000 contrats (données marché français).
 
-Ce projet modélise la fréquence de sinistres sur un portefeuille auto français 
-à l'aide d'un GLM Poisson avec offset d'exposition.
+## Méthodologie
+- GLM Poisson avec offset d'exposition — modèle fréquence
+- GLM Gamma — modèle sévérité
+- Prime pure = fréquence prédite × sévérité prédite
 
-Les données proviennent du package `CASdatasets` (freMTPL2freq).
+## Outils
+R, ggplot2, CASdatasets, R Markdown
 
-## 2. Chargement des données
+## Résultats
+- Fréquence brute portefeuille : 10%
+- Prime pure moyenne : 156€ / véhicule-année
+- BonusMalus : variable explicative la plus puissante
 
-```{r setup, message=FALSE, warning=FALSE}
-library(CASdatasets)
-library(ggplot2)
-
-data(freMTPL2freq)
-freMTPL2freq$ClaimNb <- as.numeric(freMTPL2freq$ClaimNb)
-freq <- freMTPL2freq[freMTPL2freq$VehAge <= 30 & freMTPL2freq$DrivAge <= 90, ]
-```
-
-Le dataset contient **`r nrow(freq)` contrats** après nettoyage.
-
-## 3. Statistiques descriptives
-
-```{r summary}
-summary(freq[, c("ClaimNb", "Exposure", "BonusMalus", "DrivAge", "VehAge")])
-```
-
-Fréquence brute du portefeuille :
-
-```{r frequence}
-round(sum(freq$ClaimNb) / sum(freq$Exposure), 4)
-```
-
-## 4. Modélisation GLM Poisson
-
-```{r modele}
-modele1 <- glm(ClaimNb ~ VehPower + VehAge + DrivAge + BonusMalus + VehGas + Area,
-               offset = log(Exposure),
-               family = poisson(link = "log"),
-               data = freq)
-
-summary(modele1)$coefficients
-```
-
-## 5. Prédictions
-
-```{r predictions}
-freq$prediction <- predict(modele1, type = "response")
-freq_filtre <- freq[freq$Exposure >= 0.5, ]
-freq_filtre$freq_obs <- freq_filtre$ClaimNb / freq_filtre$Exposure
-freq_filtre$freq_pred <- freq_filtre$prediction / freq_filtre$Exposure
-
-plot(freq_filtre$freq_pred, freq_filtre$freq_obs,
-     xlab = "Fréquence prédite",
-     ylab = "Fréquence observée",
-     main = "Prédictions vs Observations (Exposure >= 0.5)",
-     pch = 16, col = rgb(0, 0, 1, 0.2))
-abline(0, 1, col = "red")
-```
-## 6. Modèle de sévérité - GLM Gamma
-
-La sévérité représente le coût moyen par sinistre. On utilise un GLM Gamma 
-adapté aux distributions positives et asymétriques.
-
-```{r severite}
-data(freMTPL2sev)
-
-# Jointure avec le dataset fréquence
-sev <- merge(freMTPL2sev, freq, by = "IDpol")
-
-# Filtrage des sinistres extrêmes (99ème percentile)
-seuil <- quantile(sev$ClaimAmount, 0.99)
-sev_filtre <- sev[sev$ClaimAmount <= seuil, ]
-
-# GLM Gamma
-modele_sev <- glm(ClaimAmount ~ VehPower + VehAge + DrivAge + BonusMalus + VehGas + Area,
-                  family = Gamma(link = "log"),
-                  data = sev_filtre)
-
-summary(modele_sev)$coefficients
-```
-
-## 7. Prime pure
-
-La prime pure est le produit de la fréquence prédite par la sévérité prédite.
-Elle représente le coût espéré du risque par véhicule-année.
-
-```{r prime_pure}
-freq$sev_pred <- predict(modele_sev, newdata = freq, type = "response")
-freq$prime_pure <- (freq$prediction / freq$Exposure) * freq$sev_pred
-
-summary(freq$prime_pure)
-```
-
-```{r hist_prime}
-hist(freq$prime_pure[freq$prime_pure < 500],
-     breaks = 50,
-     main = "Distribution de la prime pure (< 500€)",
-     xlab = "Prime pure (€)",
-     col = "steelblue")
-```
-
-## 8. Prime pure par tranche de Bonus-Malus
-
-```{r prime_bm}
-bm_tranches <- cut(freq$BonusMalus, breaks = seq(50, 230, by = 20))
-prime_bm <- aggregate(prime_pure ~ bm_tranches, data = freq, FUN = mean)
-
-barplot(prime_bm$prime_pure,
-        names.arg = prime_bm$bm_tranches,
-        main = "Prime pure moyenne par tranche de Bonus-Malus",
-        xlab = "Bonus-Malus",
-        ylab = "Prime pure moyenne (€)",
-        col = "steelblue",
-        las = 2)
-```
-
-La prime pure croît fortement avec le Bonus-Malus, confirmant que le modèle 
-capte bien la segmentation du risque individuel.
+## Rapport complet
+http://rpubs.com/RRachdi/tarification-nonvie
